@@ -767,6 +767,29 @@ class LocalDB:
         )
         self._conn.commit()
 
+    def evict_expired_learnings(self, *, now: datetime | None = None) -> dict:
+        """Delete strategy learnings whose expires_at is in the past.
+
+        Learnings with NULL expires_at are retained (no TTL). Returns a
+        privacy-safe summary — ids only, never insight text.
+        """
+        clock = now or datetime.now(timezone.utc)
+        # Compare as ISO-8601 strings; save_learning stores aware UTC isoformat.
+        cutoff = clock.isoformat()
+        rows = self._conn.execute(
+            "SELECT id FROM strategy_learnings "
+            "WHERE expires_at IS NOT NULL AND expires_at <= ?",
+            (cutoff,),
+        ).fetchall()
+        ids = [int(r["id"] if isinstance(r, dict) or hasattr(r, "keys") else r[0]) for r in rows]
+        if ids:
+            self._conn.execute(
+                f"DELETE FROM strategy_learnings WHERE id IN ({','.join('?' for _ in ids)})",
+                ids,
+            )
+            self._conn.commit()
+        return {"evicted": len(ids), "ids": ids}
+
     # ── Audience Insights ──────────────────────────────────
 
     def upsert_audience_insight(
