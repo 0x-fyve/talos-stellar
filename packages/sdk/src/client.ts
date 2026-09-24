@@ -50,6 +50,11 @@ import {
   type RequestSigner,
   type SigningControllerOptions,
 } from "./signing.js";
+import {
+  normalizeNetworkId,
+  resolveNetworkConfig,
+  type ResolvedNetworkConfig,
+} from "./stellar.js";
 
 // Legacy import path: `import { TalosAPIError } from "./client.js"`.
 export { TalosAPIError };
@@ -116,6 +121,19 @@ export interface TalosClientOptions {
   baseUrl?: string;
   /** Bearer token (TALOS API key). Adds `Authorization: Bearer <key>` header. */
   apiKey?: string;
+  /**
+   * Optional Stellar network id (`public` / `mainnet`, `testnet`, `futurenet`,
+   * `standalone`, or x402-style `stellar:<id>`). When set (alone or with
+   * {@link networkPassphrase}), validated at construction via
+   * {@link resolveNetworkConfig}. Omitting both preserves prior unbound behavior.
+   */
+  network?: string;
+  /**
+   * Optional Stellar network passphrase. When set with {@link network}, the
+   * pair must agree; when set alone, must be a well-known Stellar passphrase.
+   * Errors are privacy-safe and never echo secrets or raw payloads.
+   */
+  networkPassphrase?: string;
   /**
    * Status-code retry policy (Retry-After aware). Active by default. When only
    * {@link TalosClientOptions.retry} is supplied, this policy is disabled so
@@ -404,6 +422,7 @@ export class TalosClient {
   private headers: Record<string, string>;
   private readonly retryPolicy: Required<RetryPolicyOptions>;
   private readonly retry: Required<RetryOptions>;
+  private readonly networkConfig?: ResolvedNetworkConfig;
   private readonly timeoutMs?: number;
   private readonly onError?: (event: TalosErrorEvent) => void;
   /**
@@ -420,6 +439,10 @@ export class TalosClient {
     const policyEnabled = options.retryPolicy !== undefined || options.retry === undefined;
     this.retryPolicy = resolveRetryPolicy(options.retryPolicy, policyEnabled);
     this.retry = resolveRetryOptions(options.retry);
+    this.networkConfig = resolveNetworkConfig({
+      network: options.network,
+      networkPassphrase: options.networkPassphrase,
+    });
     this.timeoutMs = options.timeoutMs;
     this.onError = options.onError;
     this.fetchOverride = options.fetch;
@@ -448,6 +471,14 @@ export class TalosClient {
    */
   getRetryOptions(): ResolvedRetryOptions {
     return this.retry;
+  }
+
+  /**
+   * Effective Stellar network / passphrase after validation, or `undefined`
+   * when the client was constructed without a network binding.
+   */
+  getNetworkConfig(): ResolvedNetworkConfig | undefined {
+    return this.networkConfig;
   }
 
   /** Resolve the fetch implementation per request. Prefer override; fall back to global. */
@@ -1002,6 +1033,26 @@ export class TalosClient {
           message: "Invalid x402 challenge",
           headers: { "www-authenticate": authHeader },
         });
+      }
+
+      // When the client is bound to a Stellar network, reject challenges that
+      // target a different (or unrecognized) network. Unbound clients skip.
+      if (this.networkConfig && challenge.network) {
+        let challengeNetwork;
+        try {
+          challengeNetwork = normalizeNetworkId(challenge.network);
+        } catch {
+          throw new TalosPaymentError(402, "Invalid x402 challenge", path, {
+            message: "x402 challenge network is not recognized",
+            headers: { "www-authenticate": authHeader },
+          });
+        }
+        if (challengeNetwork !== this.networkConfig.network) {
+          throw new TalosPaymentError(402, "Invalid x402 challenge", path, {
+            message: "x402 challenge network does not match client network",
+            headers: { "www-authenticate": authHeader },
+          });
+        }
       }
 
       // 3. Request signature from the Web API. Guard against a non-numeric
