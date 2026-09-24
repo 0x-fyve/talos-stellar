@@ -21,6 +21,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 Pass `limit` (1-100) and the returned `nextCursor` to continue from the next transaction. Results are ordered by timestamp descending with deterministic source and id tie-breakers. Cursors are opaque and malformed cursors return `400`.
 
+## Payment route coverage
+
+Run the focused token-purchase and revenue-distribution route suites and enforce per-route V8 coverage thresholds locally:
+
+```bash
+pnpm test:payment-coverage
+```
+
 ### Local pagination check
 
 ```bash
