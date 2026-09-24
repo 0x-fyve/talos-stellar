@@ -574,7 +574,7 @@ The unified CI workflow (`.github/workflows/ci.yml`) runs only the checks releva
 | `packages/sdk/**` | sdk (build/typecheck, tests) |
 | `packages/prime-agent/**` | prime-agent (ruff, pytest) |
 | `contracts/**` | contracts (cargo test, WASM build) |
-| `pnpm-lock.yaml`, `pnpm-workspace.yaml`, root `package.json`, `scripts/**`, `.github/**` | **ALL** packages |
+| `pnpm-lock.yaml`, `package-lock.json`, `pnpm-workspace.yaml`, root `package.json`, `scripts/**`, `.github/**` | **ALL** packages |
 | Unknown / unclassified files | **ALL** packages (fail-closed) |
 
 ### Local validation
@@ -585,14 +585,36 @@ To test the detection script locally before pushing:
 # Dry-run against a specific commit range
 BASE_SHA=<base> HEAD_SHA=<head> bash scripts/ci-detect-changes.sh
 
-# Run the full test suite
+# Request the full matrix explicitly (no git access needed)
+bash scripts/ci-detect-changes.sh --all
+
+# Run the full test suite (this is the exact command CI runs as a
+# self-test step in the `detect` job of `.github/workflows/ci.yml`)
 bash scripts/ci-detect-changes.test.sh
 ```
 
+### Failure semantics (fail closed, fail safe)
+
+The detector never silently skips checks. Every degraded path produces the full package matrix and exits 0, so a broken detector cannot produce a falsely green run:
+
+| Input | Behavior |
+|---|---|
+| Missing `BASE_SHA` / `HEAD_SHA` | `::error::` annotation, ALL packages, exit 0 |
+| Malformed SHA / revision-like option injection | Rejected before git is called; `::error::` annotation, ALL packages, exit 0 |
+| SHA does not resolve to a commit (e.g. force push, shallow clone) | `::error::` annotation, ALL packages, exit 0 |
+| `git diff` failure | Retried up to `DETECT_MAX_DIFF_ATTEMPTS` (default 3) with `DETECT_DIFF_RETRY_BACKOFF_SECONDS` (default 1s) backoff; on exhaustion `::error::` annotation, ALL packages, exit 0 |
+| Malformed retry env knobs | `::warning::` annotation, defaults used |
+| Empty diff (base == head, no changed files) | Empty matrix `{"include":[]}` |
+| Unclassified path | ALL packages; warning reports only the count of offending paths, never the paths themselves |
+| `--all` flag or >2 positional args | Full matrix without git access; explicit error if more than 2 args |
+
+Privacy-safety: diagnostics never echo raw input values (SHAs come from event payloads and paths may be attacker-controlled in fork PRs) and never include secrets, tokens, or payment proofs. The script only inspects file paths via `git diff --name-only -z` and never executes PR code.
+
 ### Design principles
 
-- **Fail-closed**: if the detector cannot confidently determine the scope (invalid SHA, unrecognized path), ALL packages are checked.
-- **No code execution from PRs**: the detector only inspects file paths via `git diff --name-only`.
+- **Fail-closed**: if the detector cannot confidently determine the scope (invalid SHA, unrecognized path, git failure), ALL packages are checked — never zero.
+- **Fail-safe**: every degraded path still exits 0 with a valid matrix, so a broken detector degrades to a full run instead of a silently skipped one.
+- **No code execution from PRs**: the detector only inspects file paths via `git diff --name-only -z` (NUL-delimited, safe for spaces/unicode).
 - **No secrets required**: works for fork PRs using only the GitHub-provided base/head SHAs.
 
 ### Existing per-package workflows
