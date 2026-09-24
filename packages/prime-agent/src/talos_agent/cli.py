@@ -261,6 +261,49 @@ def inspect_jobs(
             db.close()
 
 
+
+@jobs.command(name="audit")
+@click.option("--talos-id", required=True, help="Talos scope whose audit trail may be inspected")
+@click.option("--db-path", default=None, type=click.Path(dir_okay=False))
+@click.option("--effect-id", default=None, help="Filter audit trail to one effect")
+@click.option("--job-id", default=None, help="Filter audit trail to one job")
+@click.option("--limit", default=50, type=click.IntRange(1, 200))
+@click.option("--json", "as_json", is_flag=True, help="Emit metadata as JSON")
+def audit_jobs(
+    talos_id: str,
+    db_path: str | None,
+    effect_id: str | None,
+    job_id: str | None,
+    limit: int,
+    as_json: bool,
+):
+    """List durable effect replay audit entries (metadata only)."""
+    from talos_agent.job_effects import JobEffectError
+
+    db = None
+    try:
+        db, store = _job_store(db_path, talos_id)
+        rows = store.audit_trail(effect_id=effect_id, job_id=job_id, limit=limit)
+        if as_json:
+            console.print_json(json.dumps({"audit": rows, "count": len(rows)}))
+            return
+        if not rows:
+            console.print("[dim]No matching replay audit entries.[/dim]")
+            return
+        for row in rows:
+            console.print(
+                f"{row['created_at']} {row['action']} effect={row['effect_id']} "
+                f"job={row['job_id']} {row['from_state'] or '-'}->{row['to_state']} "
+                f"attempts={row['attempt_count']} actor={row['actor']} "
+                f"error={row['error_code'] or '-'}"
+            )
+    except JobEffectError as exc:
+        raise click.ClickException(f"{exc.code}: {exc}") from exc
+    finally:
+        if db is not None:
+            db.close()
+
+
 @jobs.command(name="retry")
 @click.argument("effect_id")
 @click.option("--talos-id", required=True, help="Talos scope that owns the effect")
