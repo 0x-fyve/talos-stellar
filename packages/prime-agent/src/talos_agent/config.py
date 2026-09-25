@@ -121,6 +121,30 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # Telegram send queue (opt-in; when disabled the adapter sends directly, as before).
+    # Defaults follow Telegram's documented limits: ~1 msg/s per chat, 20 msgs/min per group.
+    telegram_rate_limit_enabled: bool = Field(
+        default=False, validation_alias="TALOS_TELEGRAM_RATE_LIMIT_ENABLED"
+    )
+    telegram_min_interval_seconds: float = Field(
+        default=1.0, ge=0, le=60, validation_alias="TALOS_TELEGRAM_MIN_INTERVAL_SECONDS"
+    )
+    telegram_max_per_minute: int = Field(
+        default=20, ge=1, le=1000, validation_alias="TALOS_TELEGRAM_MAX_PER_MINUTE"
+    )
+    telegram_queue_max_size: int = Field(
+        default=1000, ge=1, le=100000, validation_alias="TALOS_TELEGRAM_QUEUE_MAX_SIZE"
+    )
+    telegram_queue_max_attempts: int = Field(
+        default=5, ge=1, le=50, validation_alias="TALOS_TELEGRAM_QUEUE_MAX_ATTEMPTS"
+    )
+    telegram_queue_max_age_seconds: float = Field(
+        default=3600.0, ge=1, le=604800, validation_alias="TALOS_TELEGRAM_QUEUE_MAX_AGE_SECONDS"
+    )
+    telegram_queue_drain_interval_seconds: float = Field(
+        default=1.0, ge=0.1, le=60, validation_alias="TALOS_TELEGRAM_QUEUE_DRAIN_INTERVAL_SECONDS"
+    )
+
     # Versioned encrypted secret rotation (opt-in for backward compatibility).
     secret_rotation_enabled: bool = Field(
         default=False, validation_alias="TALOS_SECRET_ROTATION_ENABLED"
