@@ -49,6 +49,11 @@ const requiredClasses = [
   "ChaosInjector",
   "ChaosInjectedError",
   "globalChaosInjector",
+  "REQUEST_SIGNATURE_VERSION",
+  "canonicalizeRequest",
+  "SigningController",
+  "SigningError",
+  "StellarKeypairSigner",
 ];
 for (const name of requiredClasses) {
   assert.ok(name in sdk, `expected export "${name}" missing in CJS bundle`);
@@ -110,5 +115,13 @@ const sampleQuote = sdk.constructSellerQuote({
 assert.equal(sampleQuote.amount, "1.000000");
 console.log("  + constructSellerQuote helper OK");
 
-console.log("[compat:node-cjs] ALL CHECKS PASSED");
-process.exit(0);
+const signingVectors = JSON.parse(fs.readFileSync(path.join(SDK_ROOT, "tests", "fixtures", "request-signing-vectors.json"), "utf8"));
+Promise.all(signingVectors.vectors.map(async (vector) => {
+  const bytes = await sdk.canonicalizeRequest(vector.request);
+  assert.deepEqual(Array.from(bytes), Array.from(new TextEncoder().encode(vector.canonical)), "signing vector " + vector.name);
+})).then(() => {
+  console.log("[compat:node-cjs] ALL CHECKS PASSED");
+}).catch((error) => {
+  console.error("[compat:node-cjs] request-signing vector failed", error);
+  process.exitCode = 1;
+});

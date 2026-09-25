@@ -43,6 +43,7 @@ const context = {
   self: windowLike,
   TextEncoder,
   TextDecoder,
+  btoa,
   crypto,
   fetch: () => {
     throw new Error("fetch should not be called during import-time smoke test");
@@ -113,6 +114,13 @@ const sdk =
 
 assert.ok(sdk, "TalosSDK not attached to global/window after loading bundle");
 console.log("[compat:browser-bundle] TalosSDK attached to global scope");
+if (typeof sdk.canonicalizeRequest === "function") {
+  const vectors = JSON.parse(readFileSync(resolve(SDK_ROOT, "tests", "fixtures", "request-signing-vectors.json"), "utf8"));
+  for (const vector of vectors.vectors) {
+    const bytes = await sdk.canonicalizeRequest(vector.request);
+    assert.deepEqual(Array.from(bytes), Array.from(new TextEncoder().encode(vector.canonical)), `signing vector ${vector.name}`);
+  }
+}
 console.log(
   "  exports keys:",
   Object.keys(sdk).sort().join(", "),

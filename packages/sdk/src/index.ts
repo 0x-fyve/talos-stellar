@@ -117,3 +117,27 @@ export type {
   RuntimeMatrixEntry,
   CompatibilityReport,
 } from "./compat.js";
+
+// Request signing
+export {
+  REQUEST_SIGNATURE_VERSION,
+  SigningController,
+  SigningError,
+  StellarKeypairSigner,
+  canonicalizeRequest,
+  detectSignerCapability,
+  encodeSignature,
+} from "./signing.js";
+export type {
+  CanonicalRequest,
+  RequestSigner,
+  SignatureResult,
+  SignOptions,
+  SigningCapability,
+  SigningControllerOptions,
+  SigningErrorCode,
+  SigningEvent,
+  SigningPayload,
+  SignerCapabilities,
+  StellarKeypairSignerOptions,
+} from "./signing.js";
