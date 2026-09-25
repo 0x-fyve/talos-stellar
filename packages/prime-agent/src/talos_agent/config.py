@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -12,6 +13,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from talos_agent.circuit_breaker import CircuitBreakerConfig
 
 APP_DIR = Path.home() / ".talos-agent"
+
+_CONFIG_SECRET_FIELDS = re.compile(
+    r"(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|secret|password|private[_-]?key|seed|mnemonic|signature|payment)"
+)
+_CONFIG_SECRET_VALUE = re.compile(r"(?i)(input_value\s*=\s*)(['\"])(.*?)(\2)")
+
+
+def safe_config_error(error: BaseException) -> str:
+    """Return a useful configuration error without exposing secret values."""
+    text = str(error)
+    if _CONFIG_SECRET_FIELDS.search(text):
+        text = _CONFIG_SECRET_VALUE.sub(r"\1'[REDACTED]'", text)
+    return text or "configuration could not be loaded"
 
 
 def _json_config_source() -> dict:
