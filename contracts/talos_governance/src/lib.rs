@@ -83,6 +83,10 @@ pub enum DataKey {
     CheckpointCount(Address),
     Delegation(Address),
     LastTouched(u32),
+    /// Monotonic counter for dividend epochs (1-based).
+    NextDividendEpoch,
+    /// Dividend snapshot keyed by epoch number.
+    DividendSnapshot(u32),
 }
 
 #[contracttype]
@@ -90,6 +94,44 @@ pub enum DataKey {
 pub struct Checkpoint {
     pub ledger: u32,
     pub votes: i128,
+}
+
+// ── Dividend Snapshot (#598) ─────────────────────────────────────────
+
+/// Maximum page size for `get_dividend_snapshots_page`.
+pub const DIVIDEND_PAGE_LIMIT: u32 = 50;
+
+/// A point-in-time record of per-token revenue distribution for a Talos.
+///
+/// Each epoch represents one distribution cycle.  `total_usdc` is the gross
+/// USDC distributed; `per_token_usdc` is the amount per Mitos token unit
+/// (both in micro-USDC, i.e. 10⁻⁶ USDC).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DividendSnapshot {
+    /// Monotonically-increasing epoch number (1-based).
+    pub epoch: u32,
+    /// The Talos this dividend belongs to.
+    pub talos_id: u32,
+    /// Total USDC distributed in this epoch (micro-USDC).
+    pub total_usdc: i128,
+    /// Per Mitos token unit (micro-USDC).
+    pub per_token_usdc: i128,
+    /// Ledger at which this snapshot was recorded.
+    pub snapshot_ledger: u32,
+    /// Unix timestamp of the snapshot.
+    pub created_at: u64,
+}
+
+/// Emitted when a new dividend snapshot epoch is recorded.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventDividendSnapshotRecorded {
+    pub epoch: u32,
+    pub talos_id: u32,
+    pub total_usdc: i128,
+    pub per_token_usdc: i128,
+    pub snapshot_ledger: u32,
 }
 
 // ── Pause Domains ───────────────────────────────────────────────────
@@ -187,6 +229,18 @@ fn emit_proposal_status_changed(env: &Env, proposal_id: u32, status: ProposalSta
         .publish((symbol_short!("prop_stat"), proposal_id), payload);
 }
 
+fn emit_dividend_snapshot_recorded(env: &Env, snap: &DividendSnapshot) {
+    let payload = EventDividendSnapshotRecorded {
+        epoch: snap.epoch,
+        talos_id: snap.talos_id,
+        total_usdc: snap.total_usdc,
+        per_token_usdc: snap.per_token_usdc,
+        snapshot_ledger: snap.snapshot_ledger,
+    };
+    env.events()
+        .publish((symbol_short!("div_snap"), snap.epoch), payload);
+}
+
 // ── Stable interface (v1.0.0) ───────────────────────────────────────
 //
 // Also fixes a pre-existing omission: Governance did not previously
@@ -278,6 +332,9 @@ impl TalosGovernance {
         env.storage()
             .persistent()
             .set(&DataKey::NextProposalId, &1u32);
+        env.storage()
+            .persistent()
+            .set(&DataKey::NextDividendEpoch, &1u32);
     }
 
     pub fn create_proposal(
@@ -452,6 +509,131 @@ impl TalosGovernance {
             panic!("Voting period must be positive");
         }
         env.storage().persistent().set(&DataKey::Config, &config);
+    }
+
+    // ── Dividend Snapshots (#598) ─────────────────────────────────────
+
+    /// Record a new dividend snapshot epoch (admin only).
+    ///
+    /// Each call mints the next sequential epoch and persists the snapshot.
+    /// Both `total_usdc` and `per_token_usdc` must be non-negative (zero is
+    /// allowed for no-distribution epochs).  Returns the assigned epoch number.
+    ///
+    /// # Errors
+    /// - Panics `"Contract not initialized"` when called before `initialize`.
+    /// - Panics `"Unauthorized admin"` when the signer is not the stored admin.
+    /// - Panics `"total_usdc cannot be negative"` / `"per_token_usdc cannot be negative"`.
+    pub fn record_dividend_snapshot(
+        env: Env,
+        admin: Address,
+        talos_id: u32,
+        total_usdc: i128,
+        per_token_usdc: i128,
+    ) -> u32 {
+        Self::require_admin(&env, &admin);
+
+        if total_usdc < 0 {
+            panic!("total_usdc cannot be negative");
+        }
+        if per_token_usdc < 0 {
+            panic!("per_token_usdc cannot be negative");
+        }
+
+        let epoch: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::NextDividendEpoch)
+            .unwrap_or(1);
+
+        let snapshot = DividendSnapshot {
+            epoch,
+            talos_id,
+            total_usdc,
+            per_token_usdc,
+            snapshot_ledger: env.ledger().sequence(),
+            created_at: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::DividendSnapshot(epoch), &snapshot);
+        env.storage()
+            .persistent()
+            .set(&DataKey::NextDividendEpoch, &(epoch + 1));
+
+        emit_dividend_snapshot_recorded(&env, &snapshot);
+
+        epoch
+    }
+
+    /// Return a single dividend snapshot by epoch number.
+    ///
+    /// Returns `None` when the epoch does not exist.
+    pub fn get_dividend_snapshot(env: Env, epoch: u32) -> Option<DividendSnapshot> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::DividendSnapshot(epoch))
+    }
+
+    /// Return a page of dividend snapshots.
+    ///
+    /// `offset` is the 0-based starting epoch index (i.e. the epoch number
+    /// of the first result is `offset + 1`).  `limit` is capped at
+    /// [`DIVIDEND_PAGE_LIMIT`] (50) to bound the host-function cost.
+    ///
+    /// Returns an empty `Vec` when `offset` is beyond the last epoch.
+    ///
+    /// # Examples
+    /// ```text
+    /// // First page of up to 20 snapshots
+    /// get_dividend_snapshots_page(env, 0, 20)
+    /// // Next page
+    /// get_dividend_snapshots_page(env, 20, 20)
+    /// ```
+    pub fn get_dividend_snapshots_page(
+        env: Env,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<DividendSnapshot> {
+        // Clamp limit to protect host-function budget.
+        let effective_limit = limit.min(DIVIDEND_PAGE_LIMIT);
+
+        let next_epoch: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::NextDividendEpoch)
+            .unwrap_or(1);
+
+        // Epochs are 1-based: epoch 1 is at offset 0.
+        let first_epoch = offset.saturating_add(1);
+
+        let mut results: Vec<DividendSnapshot> = Vec::new(&env);
+
+        let mut count = 0u32;
+        let mut epoch = first_epoch;
+        while count < effective_limit && epoch < next_epoch {
+            if let Some(snap) = env
+                .storage()
+                .persistent()
+                .get::<_, DividendSnapshot>(&DataKey::DividendSnapshot(epoch))
+            {
+                results.push_back(snap);
+                count += 1;
+            }
+            epoch += 1;
+        }
+
+        results
+    }
+
+    /// Return the total number of recorded dividend epochs.
+    pub fn dividend_epoch_count(env: Env) -> u32 {
+        let next: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::NextDividendEpoch)
+            .unwrap_or(1);
+        next.saturating_sub(1)
     }
 
     pub fn get_proposal(env: Env, proposal_id: u32) -> Option<Proposal> {
