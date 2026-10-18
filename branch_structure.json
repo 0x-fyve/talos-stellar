@@ -1,0 +1,30 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "feat/issue-1026-feat-web-add-an-admin-page-for-payment",
+    "feat/issue-852-refactor-contracts-replace-panic-strings-in",
+    "fix/issue-1023-perf-web-bound-the-agent-avatar-hash-cache",
+    "fix/redact-sensitive-query-fields-529",
+    "fix/sdk-validate-network-passphrase-583",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "feat/issue-1026-feat-web-add-an-admin-page-for-payment": "main",
+    "feat/issue-852-refactor-contracts-replace-panic-strings-in": "main",
+    "fix/issue-1023-perf-web-bound-the-agent-avatar-hash-cache": "main",
+    "fix/redact-sensitive-query-fields-529": "main",
+    "fix/sdk-validate-network-passphrase-583": "main",
+    "main": null,
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "feat/issue-1026-feat-web-add-an-admin-page-for-payment",
+    "feat/issue-852-refactor-contracts-replace-panic-strings-in",
+    "fix/issue-1023-perf-web-bound-the-agent-avatar-hash-cache",
+    "fix/redact-sensitive-query-fields-529",
+    "fix/sdk-validate-network-passphrase-583",
+    "origin"
+  ]
+}
