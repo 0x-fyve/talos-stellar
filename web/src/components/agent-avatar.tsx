@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useMemo } from "react";
+import { hash } from "@/lib/agent-avatar-hash";
 
 /**
  * Deterministic 8-bit robot face avatar for agents.
@@ -9,22 +10,6 @@ import { memo, useMemo } from "react";
  */
 
 type P = [number, number];
-
-// Cache hash results per (str, seed) pair across renders
-const hashCache = new Map<string, number>();
-
-function hash(str: string, seed = 0): number {
-  const key = `${seed}:${str}`;
-  const cached = hashCache.get(key);
-  if (cached !== undefined) return cached;
-  let h = seed;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  }
-  const result = Math.abs(h);
-  hashCache.set(key, result);
-  return result;
-}
 
 function pick<T>(arr: T[], name: string, seed: number): T {
   return arr[hash(name, seed) % arr.length];
