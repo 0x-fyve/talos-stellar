@@ -37,6 +37,7 @@ import {
 } from "./pagination.js";
 import {
   TalosAPIError,
+  TalosTransportError,
   TalosPaymentError,
   classifyTransportError,
   errorFromResponse,
@@ -175,12 +176,6 @@ export interface TalosClientOptions {
   /** Opt-in request signer. Omitting it preserves the legacy wire format. */
   signer?: RequestSigner;
   signing?: SigningControllerOptions;
-  /** Fetch implementation override for tests, middleware, and Node runtimes. */
-  fetch?: typeof globalThis.fetch;
-  retryPolicy?: RetryPolicyOptions;
-  timeoutMs?: number;
-  onError?: (event: TalosErrorEvent) => void;
-  chaosInjector?: ChaosInjector;
 }
 
 /**
@@ -482,11 +477,6 @@ export class TalosClient {
   private readonly fetchOverride?: typeof fetch;
   private readonly chaosInjector?: ChaosInjector;
   private signer?: SigningController;
-  private readonly fetchOverride?: typeof globalThis.fetch;
-  private readonly retryPolicy: Required<RetryOptions>;
-  private readonly timeoutMs?: number;
-  private readonly onError?: (event: TalosErrorEvent) => void;
-  private readonly chaosInjector?: ChaosInjector;
 
   constructor(options: TalosClientOptions = {}) {
     // An explicit `retry` config without `retryPolicy` opts out of the
@@ -506,10 +496,6 @@ export class TalosClient {
       options.baseUrl ?? "https://talos-stellar.vercel.app"
     ).replace(/\/$/, "");
     this.headers = { "Content-Type": "application/json" };
-    this.fetchOverride = options.fetch;
-    this.timeoutMs = options.timeoutMs;
-    this.onError = options.onError;
-    this.chaosInjector = options.chaosInjector;
     if (options.apiKey) {
       this.headers["Authorization"] = `Bearer ${options.apiKey}`;
     }

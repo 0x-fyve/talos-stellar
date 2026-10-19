@@ -21,6 +21,8 @@ import { resolve, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
+import { Keypair, StrKey, Networks } from "@stellar/stellar-sdk";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SDK_ROOT = resolve(__dirname, "..");
 const ESM_DIR = resolve(SDK_ROOT, "dist", "esm");
@@ -32,6 +34,9 @@ console.log("[compat:edge] dist size:", statSync(ESM_ENTRY).size, "bytes (main)"
 
 // Build a browser/edge-like sandbox. Deliberately no Node globals.
 const edgeGlobal = {
+  Keypair,
+  StrKey,
+  Networks,
   globalThis: undefined,
   TextEncoder,
   TextDecoder,
@@ -166,7 +171,11 @@ const files = [];
     else if (full.endsWith(".js")) files.push(full);
   }
 })(ESM_DIR);
-files.sort();
+files.sort((a, b) => {
+  if (a.endsWith("chaos.js") && b.endsWith("chaos-fixtures.js")) return -1;
+  if (b.endsWith("chaos.js") && a.endsWith("chaos-fixtures.js")) return 1;
+  return a.localeCompare(b);
+});
 
 console.log(`[compat:edge] concatenating ${files.length} ESM files`);
 
@@ -178,7 +187,11 @@ const IMPORT_LINE =
   /^import\s+(?:(?:\{[^}]*\}|\*\s+as\s+[A-Za-z0-9_$]+|[A-Za-z0-9_$]+(?:\s*,\s*\{[^}]*\})?)\s+from\s+)?["']([^"']+)["'];?\s*$/;
 
 function stripImportsExports(src) {
-  const lines = src.split(/\r?\n/);
+  // Strip multiline re-exports and imports before line processing
+  const preprocessed = src
+    .replace(/export\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?/gs, "")
+    .replace(/import\s+(?:\{[^}]*\}|\*\s+as\s+[A-Za-z0-9_$]+|[A-Za-z0-9_$]+(?:\s*,\s*\{[^}]*\})?)\s+from\s+["'][^"']+["'];?/gs, "");
+  const lines = preprocessed.split(/\r?\n/);
   const out = [];
   const deferred = [];
   for (const raw of lines) {
