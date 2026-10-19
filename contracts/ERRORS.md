@@ -105,7 +105,14 @@ These are returned by the `storage_migration` library used by the registry, not 
 | Registry | `Migration target must be greater than or equal to current version`; `Migration target exceeds supported schema version`; Migration/rollback rejection diagnostics | Explicit migration target is below current version, exceeds latest supported schema version, or migration helper rejected ordering/lock state. |
 | Registry, Governance, Name service | `Domain is paused` | The write path's pause domain is active (or was paused indefinitely). |
 | Registry, Governance, Name service | `ttl bounds: min_age exceeds max_age`; `ttl bounds: max_keys must be greater than zero`; `ttl bounds: max_keys exceeds MAX_BATCH_KEYS` | `extend_ttl_batch` bounds were rejected by the shared `ttl-manager` validator before any storage read or write. |
+| Governance | `Already initialized` | Initialization already completed. |
+| Governance | `Quorum must be positive`; `Consensus threshold must be 1..10000 bps`; `Voting period must be positive` | Initial or updated configuration is outside bounds. |
+| Governance | `Title cannot be empty`; `Description cannot be empty` | Proposal metadata is missing. |
+| Governance | `Proposal is not active`; `Voting period has ended`; `Voting period has not ended`; `Proposal is not approved` | Proposal state or timing disallows the operation. |
+| Governance | `Already voted on this proposal`; `No voting power` | Voter already voted or has no eligible weight. |
+| Governance | `Balance cannot be negative`; `Unauthorized admin` | Invalid cached balance or caller is not admin. |
 | Name service | `Invalid name...`; `Name already taken` | Name validation failed or name is registered already. |
+| Name service | `Name cannot be empty after canonicalization`; `Name exceeds maximum input length for canonicalization`; `Name exceeds maximum byte length after canonicalization` | `register_name` or `canonicalize` received a name that is empty after trimming, longer than 64 bytes, or longer than 32 bytes after trimming. `resolve_name` and `is_name_available` never fail for such input: they return `None` and `false`. |
 | Name service | `name_fee must be non-negative`; `Asset not in registry allowlist...` | Invalid fee configuration or payment asset. |
 | Name service | Registry interface/version diagnostics | Configured registry is incompatible or below required version. |
 | Name service | Timelock configuration/schedule/lifecycle diagnostics (see Registry rows) | Timelock bounds, schedule timing, or proposal lifecycle check failed. |
