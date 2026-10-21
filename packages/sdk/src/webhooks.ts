@@ -328,6 +328,7 @@ export class TalosWebhook {
       signatureHeader,
       secret,
       toleranceSeconds = 300,
+      replayWindowSeconds,
       replayStore,
       eventId,
       logger,
