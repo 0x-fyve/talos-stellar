@@ -15,7 +15,7 @@ export default function ReconcilerAdminPage() {
           Reconciler
         </h1>
         <p className="mt-1 text-sm text-gray-600">
-          Monitor Stellar finality reconciliation and trigger a tick.
+          Stellar finality reconciler health, stuck payments, and manual tick triggering.
         </p>
       </header>
       <ReconcilerClient />
